@@ -1,0 +1,11 @@
+# IDE files
+.vscode/
+.vs/
+
+# Build output
+out/
+bin/
+build/
+input/
+
+CMakeSettings.json
