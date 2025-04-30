@@ -47,29 +47,6 @@ std::string getProjDir() {
 }
 
 int main(int argc, char** argv) {
-    // Initialize GLFW 
-    if (!glfwInit()) { std::cerr << "GLFW init failed."; exit(1); }
-    GLFWwindow* window = glfwCreateWindow(800, 600, "CoR Skinning", nullptr, nullptr);
-    if (!window) { glfwTerminate(); exit(1); }
-    glfwMakeContextCurrent(window);
-    glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK) { std::cerr << "GLEW init failed\n"; exit(1); }
-    glViewport(0, 0, 800, 600);
-    glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
-    glEnable(GL_DEPTH_TEST);
-
-    glm::vec3 camTarget(0.0f), camUp(0, 1, 0);
-    float radius = 5.0f, angle = 0.0f;
-
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-
-    GLuint skinProg = LoadShaders("C:/Users/Jana/Desktop/CoRSkinning/shaders/skin.vert", "C:/Users/Jana/Desktop/CoRSkinning/shaders/skin.frag");
-    if (!skinProg) {
-        std::cerr << "Failed to create skin shader program\n";
-        exit(1);
-    }
-
     // FBX 
     std::string filePath = getProjDir() + "\\input\\ISO200_0003_Rigged.fbx";
 
@@ -156,127 +133,49 @@ int main(int argc, char** argv) {
     float omega = 0.1f;
     float bfsEpsilon = 0.000001f;
     unsigned int numberOfThreadsToUse = 8;
-    bool performSubdivision = true;
+    bool performSubdivision = false;
 
     // Choose one
-    // CoR::CoRCalculator c(sigma, omega, performSubdivision, numberOfThreadsToUse);
-    CoR::BFSCoRCalculator cs(sigma, omega, performSubdivision, numberOfThreadsToUse, bfsEpsilon);
+    CoR::CoRCalculator c(sigma, omega, performSubdivision, numberOfThreadsToUse);
+    //CoR::BFSCoRCalculator c(sigma, omega, performSubdivision, numberOfThreadsToUse, bfsEpsilon);
      
     // Create Mesh of CoRCalculation API with conversion methods
-    std::vector<CoR::WeightsPerBone> weightsPerBone = cs.convertWeights(numberOfBones, boneIndices, boneWeights);
-    CoR::CoRMesh corMesh = cs.createCoRMesh(vertices, faces, weightsPerBone, subdivEpsilon);
+    std::vector<CoR::WeightsPerBone> weightsPerBone = c.convertWeights(numberOfBones, boneIndices, boneWeights);
+    CoR::CoRMesh corMesh = c.createCoRMesh(vertices, faces, weightsPerBone, subdivEpsilon);
 
-    std::cout << "Passed corMesh. calculateCoRsAsync next." << std::endl;
     // Start asynchronously computation. In the callback we just write the cors to a file.
-    cs.calculateCoRsAsync(corMesh, [&cs](std::vector<glm::vec3>& cors) {
-        cs.saveCoRsToBinaryFile("../cor_output/bfs_cs.cors", cors);
-        cs.saveCoRsToTextFile("../cor_output/bfs_cs.txt", cors);
+    c.calculateCoRsAsync(corMesh, [&c](std::vector<glm::vec3>& cors) {
+        c.saveCoRsToBinaryFile("../cor_output/bfs_cs.cors", cors);
+        c.saveCoRsToTextFile("../cor_output/bfs_cs.txt", cors);
         });
 
     // Loading can be performed from binary files only so far.
-    std::vector<glm::vec3> cors = cs.loadCoRsFromBinaryFile("../cor_output/output_file.cors");
+    std::vector<glm::vec3> cors = c.loadCoRsFromBinaryFile("../cor_output/output_file.cors");
 
     /* ======================================================================================================= */
 
-    ///* ============================================== Rendering ============================================== */
-    //std::vector<VertexSkinData> skinInfo(vertices.size());
-    //for (size_t i = 0; i < vertices.size(); ++i) {
-    //    for (int j = 0; j < MAX_INFLUENCES; ++j) {
-    //        if (j < (int)boneIndices[i].size()) {
-    //            skinInfo[i].boneIDs[j] = boneIndices[i][j];
-    //            skinInfo[i].weights[j] = boneWeights[i][j];
-    //        }
-    //        else {
-    //            skinInfo[i].boneIDs[j] = 0;
-    //            skinInfo[i].weights[j] = 0.0f;
-    //        }
-    //    }
-    //}
+    /* ============================================== Rendering ============================================== */
+    // Initialize GLFW 
+    if (!glfwInit()) { std::cerr << "GLFW init failed."; exit(1); }
+    GLFWwindow* window = glfwCreateWindow(800, 600, "CoR Skinning", nullptr, nullptr);
+    if (!window) { glfwTerminate(); exit(1); }
+    glfwMakeContextCurrent(window);
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) { std::cerr << "GLEW init failed\n"; exit(1); }
+    glViewport(0, 0, 800, 600);
+    glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
+    glEnable(GL_DEPTH_TEST);
 
-    //// Create & fill the Mesh
-    //Mesh mesh;
-    //mesh.positions = vertices;
-    //mesh.normals = normals;
-    //mesh.centersOfRotation = cors;
-    //mesh.skinInfo = skinInfo;
-    //mesh.indices = faces;
+    glm::vec3 camTarget(0.0f), camUp(0, 1, 0);
+    float radius = 5.0f, angle = 0.0f;
 
-    //// Upload to GPU
-    //mesh.initBuffers();
-
-    //// 1) Gather bind‐pose: before you deform at all
-    //std::vector<glm::mat4> invBind(numberOfBones);
-    //for (int i = 0; i < numberOfBones; ++i) {
-    //    FbxNode* boneNode = /* your skeleton node i */;
-    //    FbxAMatrix bind = boneNode->EvaluateGlobalTransform(/* at time=0 */);
-    //    glm::mat4 bindMat = toGlm(bind);                  // your utility
-    //    invBind[i] = glm::inverse(bindMat);
-    //}
-
-    //// 2) Each frame, get current pose
-    //std::vector<glm::mat4> boneMatrices(numberOfBones);
-    //for (int i = 0; i < numberOfBones; ++i) {
-    //    FbxNode* boneNode = /* your skeleton node i */;
-    //    FbxAMatrix curr = boneNode->EvaluateGlobalTransform(currentTime);
-    //    glm::mat4 currMat = toGlm(curr);
-    //    boneMatrices[i] = currMat * invBind[i];
-    //}
-
-    //// 3) Then build dual‐quats and upload
-    //boneDualQuats.clear();
-    //for (auto& M : boneMatrices)
-    //    boneDualQuats.push_back(makeDualQuat(M));
-
-
-    //while (!glfwWindowShouldClose(window)) {
-    //    angle += 0.5f;                              // advance your orbit
-    //    float rad = glm::radians(angle);
-    //    glm::vec3 camPos = {
-    //        radius * std::sin(rad),
-    //        2.0f,
-    //        radius * std::cos(rad)
-    //    };
-    //    glm::mat4 view = glm::lookAt(camPos, camTarget, camUp);
-    //    glm::mat4 proj = glm::perspective(
-    //        glm::radians(45.0f),
-    //        800.0f / 600.0f,
-    //        0.1f,
-    //        100.0f
-    //    );
-    //    glm::mat4 projView = proj * view;
-
-    //    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-    //    // 5.1) use your skinning shader
-    //    glUseProgram(skinProg);
-
-    //    // 5.2) tell shader to use CoR‐skinning
-    //    glUniform1i(glGetUniformLocation(skinProg, "SkinningMode"), 2);
-
-    //    // 5.3) set uProjView
-    //    glUniformMatrix4fv(
-    //        glGetUniformLocation(skinProg, "uProjView"),
-    //        1, GL_FALSE,
-    //        glm::value_ptr(projView)
-    //    );
-
-    //    // 5.4) upload your skeleton uniforms:
-    //    //      skeleton.numBones, skeleton.bone[i].transform
-    //    //      and skeleton.bone[i].dqTransform.real/dual
-    //    mesh.uploadSkeletonUniforms(skinProg, boneMatrices, boneDualQuats);
-
-    //    // 5.5) draw your mesh
-    //    mesh.draw();
-
-    //    // 5.6) swap & poll
-    //    glfwSwapBuffers(window);
-    //    glfwPollEvents();
-    //}
-
-    ///* ======================================================================================================= */
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
     glfwDestroyWindow(window);
     glfwTerminate();
+    /* ======================================================================================================= */
+
 
     return 0;
 }

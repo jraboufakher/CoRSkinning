@@ -33,7 +33,17 @@ namespace CoR {
 	{
 		std::vector<WeightsPerBone> weights(skeletonBoneWeights.size(), WeightsPerBone(numBones));
 
+#ifdef COR_ENABLE_PROFILING
+		std::cout << "Skeleton Bone Weights Size: " << skeletonBoneWeights.size() << "\n";
+#endif
+
 		for (int i = 0; i < skeletonBoneWeights.size(); ++i) {
+#ifdef COR_ENABLE_PROFILING
+			if (i % 10000 == 0) {
+				std::cout << i << " weights calculated.\t" << skeletonBoneWeights.size() - i << " weights left to calculate." << std::endl;
+			}
+#endif
+
 			const std::vector<unsigned int>& indices = skeletonBoneIndices[i];
 			const std::vector<float>& weightsToConvert = skeletonBoneWeights[i];
 			WeightsPerBone &weightsToSet = weights[i];
@@ -369,9 +379,18 @@ namespace CoR {
 		std::cout << "\tCache vertices with similar skinning weights and triangle neighbourhood" << std::endl;
 		Clock clock;
 		clock.clockStart();
+		std::cout << "calcuateANNData:: vertexCount: " << vertexCount << std::endl;
 #endif
 
 		for (int i = 0; i < vertexCount; ++i) {
+#ifdef COR_ENABLE_PROFILING
+			if (i % 1000 == 0) {
+				std::cout << i << " vertices completed ";
+				clock.clockMessageAtCurrentTime("in");
+				std:: cout << vertexCount - i << " vertices left." << std::endl;
+				
+			}
+#endif
 			WeightsPerBone &wi = mesh->weights[i];
 			for (int j = i + 1; j < vertexCount; ++j) {
 				WeightsPerBone &wj = mesh->weights[j];

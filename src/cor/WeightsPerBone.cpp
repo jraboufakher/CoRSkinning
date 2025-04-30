@@ -20,6 +20,14 @@ namespace CoR {
         for (int j = 0; j < wp.size(); ++j) {
             for (int k = 0; k < wv.size(); ++k) {
                 if (j != k) {
+                    if (j >= wp.size() || k >= wp.size() || j >= wv.size() || k >= wv.size()) {
+                        std::cerr << "Out-of-bounds in similarity: "
+                            << "wp.size()=" << wp.size()
+                            << " wv.size()=" << wv.size()
+                            << " j=" << j
+                            << " k=" << k << "\n";
+                        abort();
+                    }
                     float exponent = wp[j] * wv[k] - wp[k] * wv[j];
                     exponent *= exponent;
                     exponent /= sigmaSquared;
