@@ -7,74 +7,112 @@
 #include <glm/gtx/quaternion.hpp>
 
 void Mesh::initBuffers() {
+    // 1) Generate & bind a VAO
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    // 1) positions @ layout(0)
+    // 2) Positions @ layout(0)
     glGenBuffers(1, &vboPos);
     glBindBuffer(GL_ARRAY_BUFFER, vboPos);
-    glBufferData(GL_ARRAY_BUFFER, positions.size() * sizeof(glm::vec3),
-        positions.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+        positions.size() * sizeof(glm::vec3),
+        positions.data(),
+        GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(
+        /*index*/     0,
+        /*size*/      3,
+        /*type*/      GL_FLOAT,
+        /*normalized*/GL_FALSE,
+        /*stride*/    sizeof(glm::vec3),
+        /*offset*/    (void*)0
+    );
 
-    // 2) normals @ layout(1)
+    // 3) Normals @ layout(1)
     glGenBuffers(1, &vboNorm);
     glBindBuffer(GL_ARRAY_BUFFER, vboNorm);
-    glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3),
-        normals.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+        normals.size() * sizeof(glm::vec3),
+        normals.data(),
+        GL_STATIC_DRAW);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
+        sizeof(glm::vec3), (void*)0);
 
-    // 3) uvs @ layout(2) (if present)
+    // 4) UVs @ layout(2) (if present)
     if (!uvs.empty()) {
         glGenBuffers(1, &vboUV);
         glBindBuffer(GL_ARRAY_BUFFER, vboUV);
-        glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2),
-            uvs.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER,
+            uvs.size() * sizeof(glm::vec2),
+            uvs.data(),
+            GL_STATIC_DRAW);
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
+            sizeof(glm::vec2), (void*)0);
     }
 
-    // 4) CoR @ layout(6)
+    // 5) CoRs @ layout(6)
     glGenBuffers(1, &vboCoR);
     glBindBuffer(GL_ARRAY_BUFFER, vboCoR);
-    glBufferData(GL_ARRAY_BUFFER, centersOfRotation.size() * sizeof(glm::vec3),
-        centersOfRotation.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+        centersOfRotation.size() * sizeof(glm::vec3),
+        centersOfRotation.data(),
+        GL_STATIC_DRAW);
     glEnableVertexAttribArray(6);
-    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+    glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE,
+        sizeof(glm::vec3), (void*)0);
 
-    // 5) boneIDs + weights packed
-    struct SkinPack { float id[4]; float w[4]; };
+    // 6) Pack skinInfo into a temporary VBO
+    struct SkinPack {
+        int   id[4];   // integer bone IDs
+        float w[4];   // float bone weights
+    };
     std::vector<SkinPack> pack(skinInfo.size());
     for (size_t i = 0; i < skinInfo.size(); ++i) {
         for (int j = 0; j < 4; ++j) {
-            pack[i].id[j] = float(skinInfo[i].boneIDs[j]);
+            pack[i].id[j] = skinInfo[i].boneIDs[j];
             pack[i].w[j] = skinInfo[i].weights[j];
         }
     }
+
     glGenBuffers(1, &vboSkin);
     glBindBuffer(GL_ARRAY_BUFFER, vboSkin);
-    glBufferData(GL_ARRAY_BUFFER, pack.size() * sizeof(SkinPack),
-        pack.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+        pack.size() * sizeof(SkinPack),
+        pack.data(),
+        GL_STATIC_DRAW);
 
-    // bone indices @ layout(4)
+    // 6a) Bone IDs @ layout(4) ← integer attribute
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE,
-        sizeof(SkinPack), (void*)0);
+    glVertexAttribIPointer(
+        /*index*/   4,
+        /*size*/    4,
+        /*type*/    GL_INT,
+        /*stride*/  sizeof(SkinPack),
+        /*offset*/  (void*)offsetof(SkinPack, id)
+    );
 
-    // weights @ layout(5)
+    // 6b) Weights @ layout(5)
     glEnableVertexAttribArray(5);
-    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE,
-        sizeof(SkinPack), (void*)(4 * sizeof(float)));
+    glVertexAttribPointer(
+        /*index*/   5,
+        /*size*/    4,
+        /*type*/    GL_FLOAT,
+        /*normalized*/ GL_FALSE,
+        /*stride*/  sizeof(SkinPack),
+        /*offset*/  (void*)offsetof(SkinPack, w)
+    );
 
-    // 6) element array
+    // 7) Element array (indices)
     glGenBuffers(1, &ebo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int),
-        indices.data(), GL_STATIC_DRAW);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+        indices.size() * sizeof(unsigned int),
+        indices.data(),
+        GL_STATIC_DRAW);
 
-    // cleanup
+    // 8) Done: unbind VAO
     glBindVertexArray(0);
 }
 

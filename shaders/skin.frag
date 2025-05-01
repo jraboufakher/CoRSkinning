@@ -1,10 +1,11 @@
 #version 330 core
-in vec2  vUV;
-in vec3  vNormal;
 
-out vec4 oColor;
+in  vec3 vNormal;
+out vec4 FragColor;
 
 void main(){
-  float L = max(dot(normalize(vNormal),vec3(0,0,1)),0.1);
-  oColor = vec4(vec3(1,0.8,0.6)*L,1);
+    vec3 light = normalize(vec3(1,1,1));
+    float diff = max(dot(normalize(vNormal), light), 0.0);
+    vec3 base  = vec3(0.8,0.8,0.8);
+    FragColor  = vec4(base * diff + vec3(0.2), 1.0);
 }
