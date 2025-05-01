@@ -20,6 +20,7 @@ void ProcessSkeleton(FbxNode* node, unsigned int& boneCount, int depth = 0);
 void GetBoneData(FbxMesh* mesh, std::vector<std::vector<unsigned int>>& outBoneIndices, std::vector<std::vector<float>>& outBoneWeights);
 
 void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals);
+void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs);
 
 glm::mat4 fbxToGlm(const FbxAMatrix& m);
 

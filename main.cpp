@@ -3,6 +3,7 @@
 #include <vector>
 #include <thread>
 #include <chrono>
+#include <opencv2/opencv.hpp>
 
 #include "FBXLoader.h"
 #include "cor/CoRCalculator.h"
@@ -134,6 +135,7 @@ int main(int argc, char** argv) {
     unsigned int numberOfBones = 0;
 
     std::vector<glm::vec3> normals;
+    std::vector<glm::vec2> uvs;
 
     // Prepare the FBX SDK.
     InitializeSdkObjects(lSdkManager, lScene);
@@ -188,9 +190,23 @@ int main(int argc, char** argv) {
 
             // Normals
             GetMeshNormals(rootMesh, normals);
+            if (normals.size() != vertices.size()) {
+                std::cerr << "Normal count mismatch: " << normals.size()
+                    << " vs " << vertices.size() << "\n";
+            }
+
+            // UVs
+            GetMeshUVs(rootMesh, uvs);
+            if (uvs.size() != vertices.size()) {
+                std::cerr << "UV count mismatch: " << uvs.size()
+                    << " vs " << vertices.size() << "\n";
+            }
+
 #ifdef COR_ENABLE_PROFILING
             std::cout << "Number of Vertices: " << vertices.size() << std::endl;
             std::cout << "Number of Faces: " << faces.size() / 3 << std::endl;
+            std::cout << "Number of Normals: " << normals.size() << std::endl;
+            std::cout << "Number of UVs: " << uvs.size() << std::endl;
 #endif
         }
     }
@@ -235,15 +251,17 @@ int main(int argc, char** argv) {
     CoR::CoRCalculator c(sigma, omega, performSubdivision, numberOfThreadsToUse);
     //CoR::BFSCoRCalculator c(sigma, omega, performSubdivision, numberOfThreadsToUse, bfsEpsilon);
      
+#ifdef CALCULATE_COR
     // Create Mesh of CoRCalculation API with conversion methods
-    //std::vector<CoR::WeightsPerBone> weightsPerBone = c.convertWeights(numberOfBones, boneIndices, boneWeights);
-    //CoR::CoRMesh corMesh = c.createCoRMesh(vertices, faces, weightsPerBone, subdivEpsilon);
+    std::vector<CoR::WeightsPerBone> weightsPerBone = c.convertWeights(numberOfBones, boneIndices, boneWeights);
+    CoR::CoRMesh corMesh = c.createCoRMesh(vertices, faces, weightsPerBone, subdivEpsilon);
 
-    //// Start asynchronously computation. In the callback we just write the cors to a file.
-    //c.calculateCoRsAsync(corMesh, [&c](std::vector<glm::vec3>& cors) {
-    //    c.saveCoRsToBinaryFile("../cor_output/bfs_cs.cors", cors);
-    //    c.saveCoRsToTextFile("../cor_output/bfs_cs.txt", cors);
-    //    });
+    // Start asynchronously computation. In the callback we just write the cors to a file.
+    c.calculateCoRsAsync(corMesh, [&c](std::vector<glm::vec3>& cors) {
+        c.saveCoRsToBinaryFile("../cor_output/bfs_cs.cors", cors);
+        c.saveCoRsToTextFile("../cor_output/bfs_cs.txt", cors);
+        });
+#endif // CALCULATE_COR
 
     // Loading can be performed from binary files only so far.
     std::vector<glm::vec3> cors = c.loadCoRsFromBinaryFile("../cor_output/output_file.cors");
@@ -287,6 +305,7 @@ int main(int argc, char** argv) {
     mesh.positions = vertices;
     mesh.normals = normals;
     mesh.indices = faces;
+    mesh.uvs = uvs;
 
     size_t numberOfVertices = vertices.size();
 
@@ -323,6 +342,43 @@ int main(int argc, char** argv) {
             info.weights[0] = 1.f;
         }
     }
+
+    // Texture
+    GLuint diffuseTex;
+    glGenTextures(1, &diffuseTex);
+    glBindTexture(GL_TEXTURE_2D, diffuseTex);
+
+    // load the texture map
+    int w, h, channels;
+    cv::Mat textureData_bgr = cv::imread(getProjDir() + "\\input\\ISO200_0003_Rigged.fbm\\ISO200_0003_Model_11_u1_v1_diffuse.jpg", cv::IMREAD_COLOR);
+    if (textureData_bgr.empty()) {
+        std::cerr << "Could not open or find the texture map." << std::endl;
+        return -1;
+    }
+    cv::Mat textureData;
+    cv::cvtColor(textureData_bgr, textureData, cv::COLOR_BGR2RGBA);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);         // safe row alignment
+
+    // allocate + upload
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,                   // base mip level
+        GL_RGBA8,            // internal format
+        textureData.cols,    // width
+        textureData.rows,    // height
+        0,                   // border
+        GL_RGBA,             // source format
+        GL_UNSIGNED_BYTE,    // source type
+        textureData.data     // pointer to pixel data
+    );
+
+    // mipmaps + filtering
+    glGenerateMipmap(GL_TEXTURE_2D);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     mesh.initBuffers();
 
@@ -397,6 +453,13 @@ int main(int argc, char** argv) {
 
         // Start skinning shader
         glUseProgram(skinProg);
+
+        // Bind textures
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, diffuseTex);
+
+        GLint locDiffuse = glGetUniformLocation(skinProg, "uDiffuse");
+        glUniform1i(locDiffuse, 0);
 
         // Upload camera uniforms
         GLint locView = glGetUniformLocation(skinProg, "uView");

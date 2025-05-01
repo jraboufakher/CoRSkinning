@@ -5,6 +5,7 @@
 // vertex streams
 layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNorm;
+layout(location = 2) in vec2 aUV;
 layout(location = 4) in ivec4 aBoneIDs;    // integer bone‐indices
 layout(location = 5) in vec4 aWeights;     // bone‐weights
 layout(location = 6) in vec3 aCoR;         // precomputed center-of-rotation
@@ -19,6 +20,7 @@ uniform vec4 uBoneQuaternions[MAX_BONES];
 
 // simple Phong-ish output
 out vec3 vNormal;
+out vec2 vUV;
 
 // helper: turn a (x,y,z,w) quaternion into a 3×3 rotation
 mat3 quatToMat3(vec4 q) {
@@ -61,4 +63,5 @@ void main() {
     // 5) Finish vertex
     gl_Position = uProj * uView * vec4(skinned, 1.0);
     vNormal     = R * aNorm; 
+    vUV = aUV;
 }

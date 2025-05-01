@@ -21,6 +21,7 @@ set(PUBLIC_INCLUDES
     "${LIBRARIES_BASE_PATH}/GL/FreeGLUT/include"
     "${LIBRARIES_BASE_PATH}/GL/GLEW/include"
     "${LIBRARIES_BASE_PATH}/GL/GLFW/include"
+    "${LIBRARIES_BASE_PATH}/opencv/build/include"
 )
 include_directories(${PUBLIC_INCLUDES})
 
@@ -29,6 +30,7 @@ link_directories(
     "${LIBRARIES_BASE_PATH}/GL/FreeGLUT/lib/x64"
     "${LIBRARIES_BASE_PATH}/GL/GLEW/lib/x64"
     "${LIBRARIES_BASE_PATH}/GL/GLFW/lib"
+    "${LIBRARIES_BASE_PATH}/opencv/build/x64/vc16/lib"
 )
 
 # FBXLib target
@@ -80,6 +82,7 @@ target_link_libraries(CoRSkinning PRIVATE
     glew32         # GLEW
     freeglut       # FreeGLUT import lib
     glfw3          # GLFW
+    opencv_world4110d # OpenCV
 )
 
 # Post-build: copy FBX SDK DLL
@@ -107,5 +110,12 @@ add_custom_command(TARGET CoRSkinning POST_BUILD
 add_custom_command(TARGET CoRSkinning POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${LIBRARIES_BASE_PATH}/GL/GLFW/bin/glfw3.dll"
+        $<TARGET_FILE_DIR:CoRSkinning>
+)
+
+# Copy OpenCV DLL
+add_custom_command(TARGET CoRSkinning POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LIBRARIES_BASE_PATH}/opencv/build/x64/vc16/bin/opencv_world4110d.dll"
         $<TARGET_FILE_DIR:CoRSkinning>
 )
