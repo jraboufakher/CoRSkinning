@@ -351,7 +351,7 @@ void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals) {
     for (auto& n : outNormals) n = glm::normalize(n);
 }
 
-glm::mat4 toGlm(const FbxAMatrix& m) {
+glm::mat4 fbxToGlm(const FbxAMatrix& m) {
     glm::mat4 out;
 
     // For each row r and column c of the FBX matrix,

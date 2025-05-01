@@ -21,6 +21,6 @@ void GetBoneData(FbxMesh* mesh, std::vector<std::vector<unsigned int>>& outBoneI
 
 void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals);
 
-glm::mat4 toGlm(const FbxAMatrix& m);
+glm::mat4 fbxToGlm(const FbxAMatrix& m);
 
 #endif // #ifndef _FBX_LOADER_H
