@@ -43,9 +43,9 @@ static bool CheckLinkErrors(GLuint prog) {
 GLuint LoadShaders(const char* vertPath, const char* fragPath) {
     // 1) Read sources
     std::string vertCode = ReadFile(vertPath);
-    std::cerr << "[DEBUG] vertex shader (" << vertPath << ") length = " << vertCode.size() << "\n";
+    //std::cerr << "[DEBUG] vertex shader (" << vertPath << ") length = " << vertCode.size() << "\n";
     std::string fragCode = ReadFile(fragPath);
-    std::cerr << "[DEBUG] fragment shader (" << fragPath << ") length = " << fragCode.size() << "\n";
+    //std::cerr << "[DEBUG] fragment shader (" << fragPath << ") length = " << fragCode.size() << "\n";
     if (vertCode.empty() || fragCode.empty()) return 0;
 
     const char* vSrc = vertCode.c_str();

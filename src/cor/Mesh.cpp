@@ -7,11 +7,11 @@
 #include <glm/gtx/quaternion.hpp>
 
 void Mesh::initBuffers() {
-    // 1) Generate & bind a VAO
+    // Generate & bind a VAO
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    // 2) Positions @ layout(0)
+    // Positions @ layout(0)
     glGenBuffers(1, &vboPos);
     glBindBuffer(GL_ARRAY_BUFFER, vboPos);
     glBufferData(GL_ARRAY_BUFFER,
@@ -28,7 +28,7 @@ void Mesh::initBuffers() {
         /*offset*/    (void*)0
     );
 
-    // 3) Normals @ layout(1)
+    // Normals @ layout(1)
     glGenBuffers(1, &vboNorm);
     glBindBuffer(GL_ARRAY_BUFFER, vboNorm);
     glBufferData(GL_ARRAY_BUFFER,
@@ -39,7 +39,7 @@ void Mesh::initBuffers() {
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
         sizeof(glm::vec3), (void*)0);
 
-    // 4) UVs @ layout(2) (if present)
+    // UVs @ layout(2) (if present)
     if (!uvs.empty()) {
         glGenBuffers(1, &vboUV);
         glBindBuffer(GL_ARRAY_BUFFER, vboUV);
@@ -52,7 +52,7 @@ void Mesh::initBuffers() {
             sizeof(glm::vec2), (void*)0);
     }
 
-    // 5) CoRs @ layout(6)
+    // CoRs @ layout(6)
     glGenBuffers(1, &vboCoR);
     glBindBuffer(GL_ARRAY_BUFFER, vboCoR);
     glBufferData(GL_ARRAY_BUFFER,
@@ -63,7 +63,7 @@ void Mesh::initBuffers() {
     glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE,
         sizeof(glm::vec3), (void*)0);
 
-    // 6) Pack skinInfo into a temporary VBO
+    // Pack skinInfo into a temporary VBO
     struct SkinPack {
         int   id[4];   // integer bone IDs
         float w[4];   // float bone weights
@@ -83,7 +83,7 @@ void Mesh::initBuffers() {
         pack.data(),
         GL_STATIC_DRAW);
 
-    // 6a) Bone IDs @ layout(4) ← integer attribute
+    // Bone IDs @ layout(4) ← integer attribute
     glEnableVertexAttribArray(4);
     glVertexAttribIPointer(
         /*index*/   4,
@@ -93,7 +93,7 @@ void Mesh::initBuffers() {
         /*offset*/  (void*)offsetof(SkinPack, id)
     );
 
-    // 6b) Weights @ layout(5)
+    // Bone Weights @ layout(5)
     glEnableVertexAttribArray(5);
     glVertexAttribPointer(
         /*index*/   5,
@@ -104,7 +104,7 @@ void Mesh::initBuffers() {
         /*offset*/  (void*)offsetof(SkinPack, w)
     );
 
-    // 7) Element array (indices)
+    // Element array (indices)
     glGenBuffers(1, &ebo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
@@ -112,7 +112,7 @@ void Mesh::initBuffers() {
         indices.data(),
         GL_STATIC_DRAW);
 
-    // 8) Done: unbind VAO
+    // Unbind VAO
     glBindVertexArray(0);
 }
 
@@ -134,11 +134,11 @@ void Mesh::uploadSkeletonUniforms(GLuint skinProg,
         return;
     }
 
-    // 1) skeleton.numBones
+    // skeleton.numBones
     GLint locNum = glGetUniformLocation(skinProg, "skeleton.numBones");
     glUniform1i(locNum, numBones);
 
-    // 2) for each bone, upload .transform, .dqTransform.real, .dqTransform.dual
+    // for each bone, upload .transform, .dqTransform.real, .dqTransform.dual
     for (GLsizei i = 0; i < numBones; ++i) {
         // a) classic 4x4 matrix
         {
@@ -165,16 +165,16 @@ void Mesh::uploadSkeletonUniforms(GLuint skinProg,
 
 DualQuaternion makeDualQuat(const glm::mat4& M)
 {
-    // 1) Extract rotation quaternion from upper‐left 3×3
+    // Extract rotation quaternion from upper‐left 3×3
     glm::quat q = glm::quat_cast(M);
 
-    // 2) Extract translation vector from the 4th column
+    // Extract translation vector from the 4th column
     glm::vec3 t = glm::vec3(M[3]);
 
-    // 3) Build "translation quaternion" qt = (0,  t)
+    // Build "translation quaternion" qt = (0,  t)
     glm::quat qt(0, t.x, t.y, t.z);
 
-    // 4) Dual part = 0.5 * (qt * q)
+    // Dual part = 0.5 * (qt * q)
     glm::quat dq = 0.5f * (qt * q);
 
     DualQuaternion out;

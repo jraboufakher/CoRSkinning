@@ -15,6 +15,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <glm/gtx/dual_quaternion.hpp>
 
 // For Rendering
 #include <GL/glew.h>
@@ -119,6 +120,9 @@ void scroll_callback(GLFWwindow* window, double /*xoffset*/, double yoffset) {
     camRadius = glm::clamp(camRadius, 1.0f, 100.0f);
 }
 
+// For the shaders
+std::vector<SkeletonBone> cpuSkeleton;
+
 int main(int argc, char** argv) {
     // FBX 
     std::string filePath = getProjDir() + "\\input\\ISO200_0003_Rigged.fbx";
@@ -170,6 +174,10 @@ int main(int argc, char** argv) {
         // FBX read in successfully, continue.
         printf("Scene loaded successfully\n");
 
+        // Triangulate Mesh
+        FbxGeometryConverter converter(lSdkManager);
+        converter.Triangulate(lScene, true);
+
         FbxNode* rootNode = lScene->GetRootNode();
         if (rootNode)
         {
@@ -181,6 +189,7 @@ int main(int argc, char** argv) {
 
             // Faces
             GetMeshFaces(rootMesh, faces);
+            //std::cout << faces.size()/3 << " faces." << std::endl;
 
             // Number of Bones
             ProcessSkeleton(rootNode, numberOfBones);
@@ -197,9 +206,9 @@ int main(int argc, char** argv) {
 
             // UVs
             GetMeshUVs(rootMesh, uvs);
-            if (uvs.size() != vertices.size()) {
+            if (uvs.size() != faces.size()) {
                 std::cerr << "UV count mismatch: " << uvs.size()
-                    << " vs " << vertices.size() << "\n";
+                    << " vs " << faces.size() << "\n";
             }
 
 #ifdef DEBUG
@@ -237,6 +246,34 @@ int main(int argc, char** argv) {
     // Per‐frame arrays:
     std::vector<glm::mat4> boneMatrices(numBones, glm::mat4(1.0f));
     std::vector<glm::quat> boneQuaternions(numBones, glm::quat(1, 0, 0, 0));
+
+    cpuSkeleton.resize(numBones);
+    for (int i = 0; i < numBones; ++i) {
+        // --- a) bind-pose position ---
+        // (you already evaluated this once when you built bindPoseInverse;
+        //  if you saved the bind-pose global matrix as glmBind,
+        //  then:)
+        FbxTime t0; t0.SetSecondDouble(0.0);
+        FbxAMatrix bindFbx = boneNodes[i]->EvaluateGlobalTransform(t0);
+        glm::mat4 glmBind = fbxToGlm(bindFbx);
+        glm::vec3 bindPos = glm::vec3(glmBind * glm::vec4(0, 0, 0, 1));
+        cpuSkeleton[i].pos = bindPos;
+
+        // --- b) the LBS matrix ---
+        cpuSkeleton[i].transform = boneMatrices[i];
+
+        // --- c) dual-quat from your quat + translation ---
+        // real part is just the rotation quaternion
+        glm::quat realQ = boneQuaternions[i];
+        // translation part is the LBS matrix applied to the origin
+        glm::vec3 trans = glm::vec3(boneMatrices[i] * glm::vec4(0, 0, 0, 1));
+        // build a dualquat (real + dual)
+        glm::dualquat dq = glm::dualquat(realQ, trans);
+
+        // store into your struct (note: glm::dualquat.real is a quat, containing .w last)
+        cpuSkeleton[i].dqTransform.real = glm::vec4(dq.real.x, dq.real.y, dq.real.z, dq.real.w);
+        cpuSkeleton[i].dqTransform.dual = glm::vec4(dq.dual.x, dq.dual.y, dq.dual.z, dq.dual.w);
+    }
 
     /* ================================================= CoR ================================================= */
     // Choose computation values
@@ -382,7 +419,7 @@ int main(int argc, char** argv) {
 
     mesh.initBuffers();
 
-#ifdef COR_ENABLE_PROFILING
+#ifdef DEBUG
     std::cout << "good so far :: after Mesh" << std::endl;
 #endif
     // Shaders
@@ -395,7 +432,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-#ifdef COR_ENABLE_PROFILING
+#ifdef DEBUG
     std::cout << "Good after Shaders." << std::endl;
 #endif
 
@@ -472,28 +509,33 @@ int main(int argc, char** argv) {
         GLint locMode = glGetUniformLocation(skinProg, "SkinningMode");
         glUniform1i(locMode, 2);
 
-        // Upload each bone’s transform and quaternion
-        for (int i = 0; i < numBones; ++i) {
-            // bone matrix
-            char nameMat[32];
-            sprintf(nameMat, "uBoneMatrices[%d]", i);
-            GLint locMat = glGetUniformLocation(skinProg, nameMat);
-            glUniformMatrix4fv(
-                locMat, 1, GL_FALSE,
-                glm::value_ptr(boneMatrices[i])
-            );
+        GLint locNum = glGetUniformLocation(skinProg, "skeleton.numBones");
+        glUniform1i(locNum, (GLint)cpuSkeleton.size());
 
-            // bone quaternion
-            char nameQuat[32];
-            sprintf(nameQuat, "uBoneQuaternions[%d]", i);
-            GLint locQuat = glGetUniformLocation(skinProg, nameQuat);
-            glUniform4fv(
-                locQuat, 1,
-                glm::value_ptr(boneQuaternions[i])
-            );
+        for (int i = 0; i < (int)cpuSkeleton.size(); ++i) {
+            char name[128];
+
+            // a) bind‐pose position
+            std::snprintf(name, sizeof(name), "skeleton.bone[%d].pos", i);
+            GLint locPos = glGetUniformLocation(skinProg, name);
+            glUniform3fv(locPos, 1, glm::value_ptr(cpuSkeleton[i].pos));
+
+            // b) linear‐blend matrix
+            std::snprintf(name, sizeof(name), "skeleton.bone[%d].transform", i);
+            GLint locMat = glGetUniformLocation(skinProg, name);
+            glUniformMatrix4fv(locMat, 1, GL_FALSE, glm::value_ptr(cpuSkeleton[i].transform));
+
+            // c) dual‐quat real
+            std::snprintf(name, sizeof(name), "skeleton.bone[%d].dqTransform.real", i);
+            GLint locReal = glGetUniformLocation(skinProg, name);
+            glUniform4fv(locReal, 1, glm::value_ptr(cpuSkeleton[i].dqTransform.real));
+
+            // d) dual‐quat dual
+            std::snprintf(name, sizeof(name), "skeleton.bone[%d].dqTransform.dual", i);
+            GLint locDual = glGetUniformLocation(skinProg, name);
+            glUniform4fv(locDual, 1, glm::value_ptr(cpuSkeleton[i].dqTransform.dual));
         }
 
-        // Draw mesh (binds VAO + draw call)
         mesh.draw();
 
         glfwSwapBuffers(window);

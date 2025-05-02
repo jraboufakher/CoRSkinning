@@ -16,6 +16,12 @@ struct DualQuaternion {
 };
 DualQuaternion makeDualQuat(const glm::mat4& M);
 
+struct SkeletonBone {
+    glm::vec3 pos;
+    glm::mat4 transform;
+    DualQuaternion dqTransform;
+};
+
 class Mesh {
 public:
     // CPU data

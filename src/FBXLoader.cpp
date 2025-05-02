@@ -354,6 +354,7 @@ void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals) {
 void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
 {
     if (!mesh) return;
+    outUVs.clear();
 
     //get all UV set names
     FbxStringList lUVSetNameList;
@@ -429,14 +430,24 @@ void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
                         //User TODO:
                         //Print out the value of UV(lUVValue) or log it to a file
                         outUVs.emplace_back(
-                            static_cast<float>(lUVValue[0]),
-                            static_cast<float>(lUVValue[1])
+                            glm::vec2(static_cast<float>(lUVValue[0]),
+                                static_cast<float>(lUVValue[1]))
                         );
 
                         lPolyIndexCounter++;
                     }
                 }
             }
+            /*for (int p = 0, polyCount = mesh->GetPolygonCount(); p < polyCount; ++p) {
+                int polySize = mesh->GetPolygonSize(p);
+                for (int v = 0; v < polySize; ++v) {
+                    bool    unmapped = false;
+                    FbxVector2 uv;
+                    mesh->GetPolygonVertexUV(p, v, lUVSetName, uv, unmapped);
+
+                    outUVs.emplace_back((float)uv[0], (float)uv[1]);
+                }
+            }*/
         }
     }
 }
