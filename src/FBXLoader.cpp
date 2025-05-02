@@ -354,83 +354,90 @@ void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals) {
 void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
 {
     if (!mesh) return;
-    FbxGeometryElementUV* uvElement = mesh->GetElementUV(0);
 
-    if (!uvElement) {
-        std::cerr << "[GetMeshUVs] No UV element on mesh\n";
-        return;
-    }
+    //get all UV set names
+    FbxStringList lUVSetNameList;
+    mesh->GetUVSetNames(lUVSetNameList);
 
-    auto     mapMode = uvElement->GetMappingMode();
-    auto   refMode = uvElement->GetReferenceMode();
-    auto& direct = uvElement->GetDirectArray();
-    auto& indexArr = uvElement->GetIndexArray();
+    //iterating over all uv sets
+    for (int lUVSetIndex = 0; lUVSetIndex < lUVSetNameList.GetCount(); lUVSetIndex++)
+    {
+        //get lUVSetIndex-th uv set
+        const char* lUVSetName = lUVSetNameList.GetStringAt(lUVSetIndex);
+        const FbxGeometryElementUV* lUVElement = mesh->GetElementUV(lUVSetName);
 
-    int cpCount = mesh->GetControlPointsCount();
+        if (!lUVElement)
+            continue;
 
-    if (mapMode == FbxGeometryElement::eByControlPoint) {
-        outUVs.resize(cpCount);
-        if (refMode == FbxGeometryElement::eDirect) {
-            // direct: index = control-point index
-            for (int i = 0; i < cpCount; ++i) {
-                FbxVector2 uv = direct.GetAt(i);
-                outUVs[i] = glm::vec2((float)uv[0], (float)uv[1]);
+        // only support mapping mode eByPolygonVertex and eByControlPoint
+        if (lUVElement->GetMappingMode() != FbxGeometryElement::eByPolygonVertex &&
+            lUVElement->GetMappingMode() != FbxGeometryElement::eByControlPoint)
+            return;
+
+        //index array, where holds the index referenced to the uv data
+        const bool lUseIndex = lUVElement->GetReferenceMode() != FbxGeometryElement::eDirect;
+        const int lIndexCount = (lUseIndex) ? lUVElement->GetIndexArray().GetCount() : 0;
+
+        //iterating through the data by polygon
+        const int lPolyCount = mesh->GetPolygonCount();
+
+        if (lUVElement->GetMappingMode() == FbxGeometryElement::eByControlPoint)
+        {
+            for (int lPolyIndex = 0; lPolyIndex < lPolyCount; ++lPolyIndex)
+            {
+                // build the max index array that we need to pass into MakePoly
+                const int lPolySize = mesh->GetPolygonSize(lPolyIndex);
+                for (int lVertIndex = 0; lVertIndex < lPolySize; ++lVertIndex)
+                {
+                    FbxVector2 lUVValue;
+
+                    //get the index of the current vertex in control points array
+                    int lPolyVertIndex = mesh->GetPolygonVertex(lPolyIndex, lVertIndex);
+
+                    //the UV index depends on the reference mode
+                    int lUVIndex = lUseIndex ? lUVElement->GetIndexArray().GetAt(lPolyVertIndex) : lPolyVertIndex;
+
+                    lUVValue = lUVElement->GetDirectArray().GetAt(lUVIndex);
+
+                    //User TODO:
+                    //Print out the value of UV(lUVValue) or log it to a file
+                    outUVs.emplace_back(
+                        static_cast<float>(lUVValue[0]),
+                        static_cast<float>(lUVValue[1])
+                    );
+                }
             }
         }
-        else if (refMode == FbxGeometryElement::eIndexToDirect) {
-            // indexed lookup
-            for (int i = 0; i < cpCount; ++i) {
-                int idx = indexArr.GetAt(i);
-                FbxVector2 uv = direct.GetAt(idx);
-                outUVs[i] = glm::vec2((float)uv[0], (float)uv[1]);
+        else if (lUVElement->GetMappingMode() == FbxGeometryElement::eByPolygonVertex)
+        {
+            int lPolyIndexCounter = 0;
+            for (int lPolyIndex = 0; lPolyIndex < lPolyCount; ++lPolyIndex)
+            {
+                // build the max index array that we need to pass into MakePoly
+                const int lPolySize = mesh->GetPolygonSize(lPolyIndex);
+                for (int lVertIndex = 0; lVertIndex < lPolySize; ++lVertIndex)
+                {
+                    if (lPolyIndexCounter < lIndexCount)
+                    {
+                        FbxVector2 lUVValue;
+
+                        //the UV index depends on the reference mode
+                        int lUVIndex = lUseIndex ? lUVElement->GetIndexArray().GetAt(lPolyIndexCounter) : lPolyIndexCounter;
+
+                        lUVValue = lUVElement->GetDirectArray().GetAt(lUVIndex);
+
+                        //User TODO:
+                        //Print out the value of UV(lUVValue) or log it to a file
+                        outUVs.emplace_back(
+                            static_cast<float>(lUVValue[0]),
+                            static_cast<float>(lUVValue[1])
+                        );
+
+                        lPolyIndexCounter++;
+                    }
+                }
             }
         }
-        else {
-            std::cerr << "[GetMeshUVs] Unsupported ReferenceMode for ByControlPoint: "
-                << refMode << "\n";
-        }
-    }
-    else if (mapMode == FbxGeometryElement::eByPolygonVertex) {
-        outUVs.assign(cpCount, glm::vec2(0.0f));
-        std::vector<int> counts(cpCount, 0);
-
-        int polyCount = mesh->GetPolygonCount();
-        for (int p = 0; p < polyCount; ++p) {
-            int vertsInPoly = mesh->GetPolygonSize(p);
-            for (int v = 0; v < vertsInPoly; ++v) {
-                // which control-point does this polygon-vertex reference?
-                int cpIndex = mesh->GetPolygonVertex(p, v);
-
-                // find the UV index for this polygon-vertex
-                int uvIndex;
-                if (refMode == FbxGeometryElement::eDirect) {
-                    uvIndex = p * vertsInPoly + v;
-                }
-                else if (refMode == FbxGeometryElement::eIndexToDirect) {
-                    uvIndex = indexArr.GetAt(p * vertsInPoly + v);
-                }
-                else {
-                    std::cerr << "[GetMeshUVs] Unsupported ReferenceMode for ByPolygonVertex: "
-                        << refMode << "\n";
-                    continue;
-                }
-
-                // fetch & accumulate
-                FbxVector2 uv = direct.GetAt(uvIndex);
-                outUVs[cpIndex] += glm::vec2((float)uv[0], (float)uv[1]);
-                counts[cpIndex]++;
-            }
-        }
-        // average them
-        for (int i = 0; i < cpCount; ++i) {
-            if (counts[i] > 0)
-                outUVs[i] /= float(counts[i]);
-            else
-                outUVs[i] = glm::vec2(0.0f);  // fallback
-        }
-    }
-    else {
-        std::cerr << "[GetMeshUVs] Unsupported MappingMode: " << mapMode << "\n";
     }
 }
 

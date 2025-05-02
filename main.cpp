@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
                     << " vs " << vertices.size() << "\n";
             }
 
-#ifdef COR_ENABLE_PROFILING
+#ifdef DEBUG
             std::cout << "Number of Vertices: " << vertices.size() << std::endl;
             std::cout << "Number of Faces: " << faces.size() / 3 << std::endl;
             std::cout << "Number of Normals: " << normals.size() << std::endl;
@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
     // Loading can be performed from binary files only so far.
     std::vector<glm::vec3> cors = c.loadCoRsFromBinaryFile("../cor_output/output_file.cors");
 
-#ifdef COR_ENABLE_PROFILING
+#ifdef DEBUG
     for (int i = 0; i < std::min(5, int(vertices.size())); ++i) {
         std::cout << "CoR[" << i << "] = "
             << cors[i].x << ", "
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
     if (glewInit() != GLEW_OK) { std::cerr << "GLEW init failed\n"; exit(1); }
 
     glViewport(0, 0, 800, 600);
-    glClearColor(0.2f, 0.2f, 0.3f, 1.0f);
+    glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
     glEnable(GL_DEPTH_TEST);
 
     glfwSetMouseButtonCallback(window, mouse_button_callback);
@@ -432,7 +432,7 @@ int main(int argc, char** argv) {
             glm::value_ptr(view)
         );
 
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+        glClearColor(0.9f, 0.9f, 0.9f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // Compute your current animation pose (update boneMatrices & boneQuaternions each frame)
