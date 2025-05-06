@@ -1,26 +1,34 @@
-﻿#include <iostream>
-#include <vector>
+﻿#include "FBXLoader.h"
+#include <iostream>
 #include <map>
-#include <cstdint>
 #include <algorithm>
-#include <fstream>
 
-#include "FBXLoader.h"
-#include "DisplayCommon.h"
+FBXLoader::FBXLoader() {
+    InitializeSdkObjects(pManager, pScene);
+}
 
-struct BoneInfluence {
-    int boneIndex;
-    float weight;
-};
+FBXLoader::~FBXLoader() {
+    DestroySdkObjects(pManager, pExitStatus);
+}
 
-using VertexSkinMap = std::map<int, std::vector<BoneInfluence>>; // maps vertex index -> list of (bone index, weight)
+glm::mat4 FBXLoader::fbxToGlm(const FbxAMatrix& m)
+{
+    glm::mat4 out;
 
-#ifdef IOS_REF
-    #undef  IOS_REF
-    #define IOS_REF (*(pManager->GetIOSettings()))
-#endif
+    // For each row r and column c of the FBX matrix,
+    // assign to out[c][r] because glm is column-major.
+    for (int r = 0; r < 4; ++r) {
+        FbxVector4 row = m.GetRow(r);
+        out[0][r] = static_cast<float>(row[0]);
+        out[1][r] = static_cast<float>(row[1]);
+        out[2][r] = static_cast<float>(row[2]);
+        out[3][r] = static_cast<float>(row[3]);
+    }
 
-void InitializeSdkObjects(FbxManager*& pManager, FbxScene*& pScene)
+    return out;
+}
+
+void FBXLoader::InitializeSdkObjects(FbxManager*& pManager, FbxScene*& pScene)
 {
     //The first thing to do is to create the FBX Manager which is the object allocator for almost all the classes in the SDK
     pManager = FbxManager::Create();
@@ -48,14 +56,14 @@ void InitializeSdkObjects(FbxManager*& pManager, FbxScene*& pScene)
     }
 }
 
-void DestroySdkObjects(FbxManager* pManager, bool pExitStatus)
+void FBXLoader::DestroySdkObjects(FbxManager* pManager, bool pExitStatus)
 {
     //Delete the FBX Manager. All the objects that have been allocated using the FBX Manager and that haven't been explicitly destroyed are also automatically destroyed.
     if (pManager) pManager->Destroy();
     if (pExitStatus) FBXSDK_printf("Program Success!\n");
 }
 
-bool LoadScene(FbxManager* pManager, FbxDocument* pScene, const char* pFilename)
+bool FBXLoader::LoadScene(const char* pFilename)
 {
     int lFileMajor, lFileMinor, lFileRevision;
     int lSDKMajor, lSDKMinor, lSDKRevision;
@@ -154,54 +162,123 @@ bool LoadScene(FbxManager* pManager, FbxDocument* pScene, const char* pFilename)
                 FbxArrayDelete<FbxString*>(details);
             }
         }
-    }
 
+        // Trinagulate Scene
+        triangulateScene();
+
+        // Extract Data
+        FbxNode* rootNode = pScene->GetRootNode();
+        if (rootNode) {
+            extractSkeletonData(rootNode);
+            extractMeshData(rootNode);
+        }
+
+    }
     // Destroy the importer.
     lImporter->Destroy();
 
     return lStatus;
 }
 
-// Process the scene to look for FbxSkeleton nodes.
-void ProcessSkeleton(FbxNode* node, unsigned int& boneCount, int depth)
+void FBXLoader::triangulateScene()
+{
+    FbxGeometryConverter converter(pManager);
+    converter.Triangulate(pScene, true);
+}
+
+void FBXLoader::extractMeshData(FbxNode* node)
 {
     if (!node) return;
 
     FbxNodeAttribute* attr = node->GetNodeAttribute();
-    if (attr && attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
+    if (attr && attr->GetAttributeType() == FbxNodeAttribute::eMesh)
     {
-        std::string name = node->GetName();
-        if (name.size() >= 4 && name.substr(name.size() - 4) == "_end")
-        {
-            return; // skip "_end" bones
+        FbxMesh* mesh = node->GetMesh();
+
+        // Vertices 
+        int controlPointCount = mesh->GetControlPointsCount();
+        FbxVector4* controlPoints = mesh->GetControlPoints();
+        mesh_.vertices.reserve(controlPointCount);
+        for (int i = 0; i < controlPointCount; ++i) {
+            FbxVector4& p = controlPoints[i];
+            glm::vec3 vertex(static_cast<float>(p[0]),
+                static_cast<float>(p[1]),
+                static_cast<float>(p[2]));
+            mesh_.vertices.push_back(vertex);
         }
-        boneCount++;
 
-        // for (int i = 0; i < depth; i++) std::cout << "  ";
-        // std::cout << "Joint: " << name;
+        // Faces
+        int polygonCount = mesh->GetPolygonCount();
+        mesh_.faces.reserve(polygonCount * 3);
 
-        auto skeleton = static_cast<FbxSkeleton*>(attr);
-        /*switch (skeleton->GetSkeletonType()) {
-        case FbxSkeleton::eRoot: std::cout << " (Root)"; break;
-        case FbxSkeleton::eLimb: std::cout << " (Limb)"; break;
-        case FbxSkeleton::eLimbNode: std::cout << " (Limb Node)"; break;
-        case FbxSkeleton::eEffector: std::cout << " (Effector)"; break;
+        // Loop over each polygon in the mesh.
+        for (int polygonIndex = 0; polygonIndex < polygonCount; ++polygonIndex) {
+            int vertexCount = mesh->GetPolygonSize(polygonIndex);
+
+            // Skip degenerate polygons
+            if (vertexCount < 3) {
+                printf("Warning: Polygon %d has less than 3 vertices (%d)\n",
+                    polygonIndex, vertexCount);
+                continue;
+            }
+            // If the polygon is a triangle, simply add its 3 vertices.
+            else if (vertexCount == 3) {
+                for (int vertexIndex = 0; vertexIndex < 3; ++vertexIndex) {
+                    int controlPointIndex = mesh->GetPolygonVertex(polygonIndex, vertexIndex);
+                    mesh_.faces.push_back(static_cast<unsigned int>(controlPointIndex));
+                }
+            }
+            // For polygons with more than 3 vertices, use a triangle fan to triangulate.
+            else {
+                int v0 = mesh->GetPolygonVertex(polygonIndex, 0);
+                for (int vertexIndex = 1; vertexIndex < vertexCount - 1; ++vertexIndex) {
+                    int v1 = mesh->GetPolygonVertex(polygonIndex, vertexIndex);
+                    int v2 = mesh->GetPolygonVertex(polygonIndex, vertexIndex + 1);
+                    mesh_.faces.push_back(static_cast<unsigned int>(v0));
+                    mesh_.faces.push_back(static_cast<unsigned int>(v1));
+                    mesh_.faces.push_back(static_cast<unsigned int>(v2));
+                }
+            }
         }
-        std::cout << std::endl;*/
 
-        FbxAMatrix globalTransform = node->EvaluateGlobalTransform();
-        FbxVector4 T = globalTransform.GetT();
-        // std::cout << "    Global Translation: (" << T[0] << ", " << T[1] << ", " << T[2] << ")\n";
+        // Weights and Skeleton Data
+        getBoneData(mesh);
+
+        // Normals and UVs
+        computeNormals(mesh);
+        computeUVs(mesh);
+
+        return;
     }
-
     for (int i = 0; i < node->GetChildCount(); ++i)
     {
-        ProcessSkeleton(node->GetChild(i), boneCount, depth + 1);
+        FBXLoader::extractMeshData(node->GetChild(i));
     }
 }
 
+void FBXLoader::extractSkeletonData(FbxNode* node)
+{
+    if (!node) return;
+    FbxNodeAttribute* attr = node->GetNodeAttribute();
+    if (attr && attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
+    {
+        skeleton_.numberOfBones++;
+        skeleton_.boneNodes.push_back(node);
+    }
+    for (int i = 0; i < node->GetChildCount(); ++i)
+        extractSkeletonData(node->GetChild(i));
+    // after gathering nodes, compute bind-pose inverses
+    if (node == pScene->GetRootNode()) {
+        skeleton_.bindPoseInverse.resize(skeleton_.numberOfBones);
+        for (unsigned int i = 0; i < skeleton_.numberOfBones; ++i) {
+            FbxTime t0; t0.SetSecondDouble(0);
+            auto mat = skeleton_.boneNodes[i]->EvaluateGlobalTransform(t0);
+            skeleton_.bindPoseInverse[i] = glm::inverse(fbxToGlm(mat));
+        }
+    }
+}
 
-void GetBoneData(FbxMesh* mesh, std::vector<std::vector<unsigned int>>& outBoneIndices, std::vector<std::vector<float>>& outBoneWeights)
+void FBXLoader::getBoneData(FbxMesh* mesh)
 {
     if (!mesh) return;
 
@@ -212,37 +289,47 @@ void GetBoneData(FbxMesh* mesh, std::vector<std::vector<unsigned int>>& outBoneI
     if (skinCount == 0)
         return;
 
-    // Influences per control point (bone weight per vertex)
-    for (int i = 0; i < skinCount; i++) {
-        FbxSkin* skin = static_cast<FbxSkin*>(mesh->GetDeformer(i, FbxDeformer::eSkin));
+    // Influences per control point: for each skin-deformer and each cluster
+    for (int i = 0; i < skinCount; ++i) {
+        auto* skin = static_cast<FbxSkin*>(mesh->GetDeformer(i, FbxDeformer::eSkin));
         int clusterCount = skin->GetClusterCount();
 
-        for (int j = 0; j < clusterCount; j++) {
-            FbxCluster* cluster = skin->GetCluster(j);
+        for (int j = 0; j < clusterCount; ++j) {
+            auto* cluster = skin->GetCluster(j);
+            FbxNode* linkNode = cluster->GetLink();
+            // find that linkNode in skeleton_.boneNodes
+            int boneIndex = -1;
+            for (int b = 0; b < (int)skeleton_.boneNodes.size(); ++b) {
+                if (skeleton_.boneNodes[b] == linkNode) {
+                    boneIndex = b;
+                    break;
+                }
+            }
+            if (boneIndex < 0) {
+                std::cerr << "Warning: bone '" << linkNode->GetName() << "' not found in skeleton.\n";
+                continue;
+            }
+            // apply that boneIndex to its vertex
             int* indices = cluster->GetControlPointIndices();
             double* weights = cluster->GetControlPointWeights();
             int count = cluster->GetControlPointIndicesCount();
-
             for (int k = 0; k < count; k++) {
                 int cpIndex = indices[k];
-                float weight = static_cast<float>(weights[k]);
-
-                if (weight > 0.0f) {
-                    skinWeights[cpIndex].push_back({ j, weight }); // j = bone index
+                float w = static_cast<float>(weights[k]);
+                if (w > 0.0f) {
+                    skinWeights[cpIndex].push_back({ boneIndex, w });
                 }
             }
         }
     }
-    outBoneIndices.resize(controlPointCount);
-    outBoneWeights.resize(controlPointCount);
+
+    mesh_.boneIndices.resize(controlPointCount);
+    mesh_.boneWeights.resize(controlPointCount);
 
     // Normalize and fill output
     for (int cpIndex = 0; cpIndex < controlPointCount; ++cpIndex) {
         auto& influences = skinWeights[cpIndex];
-
-        std::sort(influences.begin(), influences.end(), [](const BoneInfluence& a, const BoneInfluence& b) {
-            return a.weight > b.weight;
-            });
+        std::sort(influences.begin(), influences.end(), [](const BoneInfluence& a, const BoneInfluence& b) { return a.weight > b.weight; });
 
         float total = 0.0f;
         for (const auto& inf : influences)
@@ -250,87 +337,18 @@ void GetBoneData(FbxMesh* mesh, std::vector<std::vector<unsigned int>>& outBoneI
 
         if (total > 0.0f) {
             for (const auto& inf : influences) {
-                outBoneIndices[cpIndex].push_back(static_cast<unsigned int>(inf.boneIndex));
-                outBoneWeights[cpIndex].push_back(inf.weight / total);
+                mesh_.boneIndices[cpIndex].push_back(static_cast<unsigned int>(inf.boneIndex));
+                mesh_.boneWeights[cpIndex].push_back(inf.weight / total);
             }
         }
     }
 }
 
-void ProcessMesh(FbxNode* node, FbxMesh* &mesh)
+void FBXLoader::computeNormals(FbxMesh* mesh)
 {
-    FbxNodeAttribute* attr = node->GetNodeAttribute();
-    if (attr && attr->GetAttributeType() == FbxNodeAttribute::eMesh)
-    {
-        mesh = node->GetMesh();
-        return;    
-    }
-    
-    for (int i = 0; i < node->GetChildCount(); ++i)
-    {
-        //ProcessMesh(node->GetChild(i), mesh, outBoneIndices, outBoneWeights);
-        ProcessMesh(node->GetChild(i), mesh);
-    }
-}
-
-void GetMeshVertices(FbxMesh* mesh, std::vector<glm::vec3>& outVertices) {
-    if (!mesh) return;
-
-    int controlPointCount = mesh->GetControlPointsCount();
-    FbxVector4* controlPoints = mesh->GetControlPoints();
-
-    outVertices.reserve(controlPointCount);
-
-    for (int i = 0; i < controlPointCount; ++i) {
-        FbxVector4& p = controlPoints[i];
-        glm::vec3 vertex(static_cast<float>(p[0]),
-            static_cast<float>(p[1]),
-            static_cast<float>(p[2]));
-        outVertices.push_back(vertex);
-    }
-}
-
-void GetMeshFaces(FbxMesh* mesh, std::vector<unsigned int>& outFaces) {
-    if (!mesh) return;
-
-    int polygonCount = mesh->GetPolygonCount();
-    outFaces.reserve(polygonCount * 3);
-
-    // Loop over each polygon in the mesh.
-    for (int polygonIndex = 0; polygonIndex < polygonCount; ++polygonIndex) {
-        int vertexCount = mesh->GetPolygonSize(polygonIndex);
-
-        // Skip degenerate polygons
-        if (vertexCount < 3) {
-            printf("Warning: Polygon %d has less than 3 vertices (%d)\n",
-                polygonIndex, vertexCount);
-            continue;
-        }
-        // If the polygon is a triangle, simply add its 3 vertices.
-        else if (vertexCount == 3) {
-            for (int vertexIndex = 0; vertexIndex < 3; ++vertexIndex) {
-                int controlPointIndex = mesh->GetPolygonVertex(polygonIndex, vertexIndex);
-                outFaces.push_back(static_cast<unsigned int>(controlPointIndex));
-            }
-        }
-        // For polygons with more than 3 vertices, use a triangle fan to triangulate.
-        else {
-            int v0 = mesh->GetPolygonVertex(polygonIndex, 0);
-            for (int vertexIndex = 1; vertexIndex < vertexCount - 1; ++vertexIndex) {
-                int v1 = mesh->GetPolygonVertex(polygonIndex, vertexIndex);
-                int v2 = mesh->GetPolygonVertex(polygonIndex, vertexIndex + 1);
-                outFaces.push_back(static_cast<unsigned int>(v0));
-                outFaces.push_back(static_cast<unsigned int>(v1));
-                outFaces.push_back(static_cast<unsigned int>(v2));
-            }
-        }
-    }
-}
-
-void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals) {
     if (!mesh) return;
     int polyCount = mesh->GetPolygonCount();
-    outNormals.resize(mesh->GetControlPointsCount(), glm::vec3(0));
+    mesh_.normals.resize(mesh->GetControlPointsCount(), glm::vec3(0));
     // average per‐vertex normals:
     for (int pi = 0; pi < polyCount; ++pi) {
         // fetch the three control‐point indices
@@ -344,17 +362,16 @@ void GetMeshNormals(FbxMesh* mesh, std::vector<glm::vec3>& outNormals) {
             v1(p1[0], p1[1], p1[2]),
             v2(p2[0], p2[1], p2[2]);
         glm::vec3 faceNorm = glm::normalize(glm::cross(v1 - v0, v2 - v0));
-        outNormals[i0] += faceNorm;
-        outNormals[i1] += faceNorm;
-        outNormals[i2] += faceNorm;
+        mesh_.normals[i0] += faceNorm;
+        mesh_.normals[i1] += faceNorm;
+        mesh_.normals[i2] += faceNorm;
     }
-    for (auto& n : outNormals) n = glm::normalize(n);
+    for (auto& n : mesh_.normals) n = glm::normalize(n);
 }
 
-void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
+void FBXLoader::computeUVs(FbxMesh* mesh)
 {
     if (!mesh) return;
-    outUVs.clear();
 
     //get all UV set names
     FbxStringList lUVSetNameList;
@@ -400,9 +417,7 @@ void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
 
                     lUVValue = lUVElement->GetDirectArray().GetAt(lUVIndex);
 
-                    //User TODO:
-                    //Print out the value of UV(lUVValue) or log it to a file
-                    outUVs.emplace_back(
+                    mesh_.uvs.emplace_back(
                         static_cast<float>(lUVValue[0]),
                         static_cast<float>(lUVValue[1])
                     );
@@ -427,9 +442,7 @@ void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
 
                         lUVValue = lUVElement->GetDirectArray().GetAt(lUVIndex);
 
-                        //User TODO:
-                        //Print out the value of UV(lUVValue) or log it to a file
-                        outUVs.emplace_back(
+                        mesh_.uvs.emplace_back(
                             glm::vec2(static_cast<float>(lUVValue[0]),
                                 static_cast<float>(lUVValue[1]))
                         );
@@ -438,32 +451,8 @@ void GetMeshUVs(FbxMesh* mesh, std::vector<glm::vec2>& outUVs)
                     }
                 }
             }
-            /*for (int p = 0, polyCount = mesh->GetPolygonCount(); p < polyCount; ++p) {
-                int polySize = mesh->GetPolygonSize(p);
-                for (int v = 0; v < polySize; ++v) {
-                    bool    unmapped = false;
-                    FbxVector2 uv;
-                    mesh->GetPolygonVertexUV(p, v, lUVSetName, uv, unmapped);
-
-                    outUVs.emplace_back((float)uv[0], (float)uv[1]);
-                }
-            }*/
         }
     }
 }
 
-glm::mat4 fbxToGlm(const FbxAMatrix& m) {
-    glm::mat4 out;
 
-    // For each row r and column c of the FBX matrix,
-    // assign to out[c][r] because glm is column-major.
-    for (int r = 0; r < 4; ++r) {
-        FbxVector4 row = m.GetRow(r);
-        out[0][r] = static_cast<float>(row[0]);
-        out[1][r] = static_cast<float>(row[1]);
-        out[2][r] = static_cast<float>(row[2]);
-        out[3][r] = static_cast<float>(row[3]);
-    }
-
-    return out;
-}

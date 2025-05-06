@@ -69,7 +69,7 @@ struct DualQuaternion {
 
 #define MAX_NUM_BONES_PER_MESH 100
 
-layout (location = 4) in vec4 SkeletonBoneIndices;
+layout (location = 4) in ivec4 SkeletonBoneIndices;
 layout (location = 5) in vec4 SkeletonBoneWeights;
 layout (location = 6) in vec3 centerOfRotation;
 

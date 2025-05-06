@@ -57,27 +57,44 @@ set(CoR_HEADERS
     include/cor/CoRMesh.h
     include/cor/CoRTriangle.h
     include/cor/WeightsPerBone.h
-    include/cor/Mesh.h
-    include/cor/ShaderUtils.h
 )
 set(CoR_SOURCES
     src/cor/Clock.cpp
     src/cor/CoRCalculator.cpp
     src/cor/CoRTriangle.cpp
     src/cor/WeightsPerBone.cpp
-    src/cor/Mesh.cpp
-    src/cor/ShaderUtils.cpp
 )
 add_library(CoRLib ${CoR_HEADERS} ${CoR_SOURCES})
 
+# RenderLib Target
+set(RENDER_HEADERS
+    include/render/Render.h
+    include/render/Mesh.h
+    include/render/Camera.h
+    include/render/Shader.h
+    include/render/Window.h
+    include/render/AnimController.h
+)
+set(RENDER_SOURCES
+    src/render/Render.cpp
+    src/render/Mesh.cpp
+    src/render/Camera.cpp
+    src/render/Shader.cpp
+    src/render/Window.cpp
+    src/render/AnimController.cpp
+)
+add_library(RenderLib ${RENDER_HEADERS} ${RENDER_SOURCES})
+
+
 # Executable target
-add_executable(CoRSkinning main.cpp)
+add_executable(CoRSkinning main.cpp src/CoRProcessor.cpp)
 
 # Link order: your libs first, then OpenGL, then GLEW/FreeGLUT
 find_package(OpenGL REQUIRED)
 target_link_libraries(CoRSkinning PRIVATE
     FBXLib
     CoRLib
+    RenderLib
     ${OPENGL_gl_LIBRARY}
     glew32         # GLEW
     freeglut       # FreeGLUT import lib

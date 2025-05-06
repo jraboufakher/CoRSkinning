@@ -1,8 +1,6 @@
-﻿#include "cor/Mesh.h"
+﻿#include "render/Mesh.h"
 #include <iostream>
-#include <string>
 #include <cstring>
-
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
@@ -43,6 +41,9 @@ void Mesh::initBuffers() {
     if (!uvs.empty()) {
         glGenBuffers(1, &vboUV);
         glBindBuffer(GL_ARRAY_BUFFER, vboUV);
+
+        //std::cout << "[DEBUG] uvs.size() = " << uvs.size() << ", first UV = (" << uvs[0].x << "," << uvs[0].y << ")\n";
+
         glBufferData(GL_ARRAY_BUFFER,
             uvs.size() * sizeof(glm::vec2),
             uvs.data(),
@@ -50,6 +51,10 @@ void Mesh::initBuffers() {
         glEnableVertexAttribArray(2);
         glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
             sizeof(glm::vec2), (void*)0);
+
+        GLint enabled = 0;
+        glGetVertexAttribiv(2, GL_VERTEX_ATTRIB_ARRAY_ENABLED, &enabled);
+        //std::cout << "[DEBUG] attrib 2 enabled = " << enabled << "\n";
     }
 
     // CoRs @ layout(6)
@@ -124,9 +129,7 @@ void Mesh::draw() const {
     glBindVertexArray(0);
 }
 
-void Mesh::uploadSkeletonUniforms(GLuint skinProg,
-    const std::vector<glm::mat4>& boneMatrices,
-    const std::vector<DualQuaternion>& boneDualQuats)
+void Mesh::uploadSkeletonUniforms(GLuint skinProg, const std::vector<glm::mat4>& boneMatrices, const std::vector<DualQuaternion>& boneDualQuats)
 {
     GLsizei numBones = (GLsizei)boneMatrices.size();
     if (boneDualQuats.size() != boneMatrices.size()) {

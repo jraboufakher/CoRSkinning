@@ -1,10 +1,12 @@
 #pragma once
 #include <vector>
+#include <string>
+#include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <GL/glew.h>
 
 static const int MAX_INFLUENCES = 4;
+
 struct VertexSkinData {
     int   boneIDs[MAX_INFLUENCES];
     float weights [MAX_INFLUENCES];
@@ -29,6 +31,7 @@ public:
     std::vector<glm::vec2> uvs;              // if you have them
     std::vector<unsigned int> indices;
     std::vector<VertexSkinData> skinInfo;
+    std::vector<SkeletonBone> cpuSkeleton;
 
     // GPU handles
     GLuint vao;
@@ -38,7 +41,5 @@ public:
     void initBuffers();
     void draw() const;
 
-    void uploadSkeletonUniforms(GLuint skinProg,
-        const std::vector<glm::mat4>& boneMatrices,
-        const std::vector<DualQuaternion>& boneDualQuats);
+    void uploadSkeletonUniforms(GLuint skinProg, const std::vector<glm::mat4>& boneMatrices, const std::vector<DualQuaternion>& boneDualQuats);
 };
