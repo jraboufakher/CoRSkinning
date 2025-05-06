@@ -37,7 +37,7 @@ static std::string getProjDir() {
 }
 
 int main(int argc, char** argv) {
-    // 1) Load FBX
+    // Load FBX
     std::string projDir = getProjDir();
     std::string fbxFile = (argc > 1) ? argv[1]
         : projDir + R"(\input\ISO200_0003_Rigged.fbx)";
@@ -73,11 +73,9 @@ int main(int argc, char** argv) {
         skelData.numberOfBones,
         nullptr  // no further callback
     );
-    // give it a moment (in your real app you’d wait on an event)
-    std::this_thread::sleep_for(std::chrono::seconds(1));
 #endif
 
-    // Load the precomputed centers
+    // Load the precomputed cors
     std::string corsFile = projDir + R"(\cor_output\output_file.cors)";
     auto cors = corProc.LoadCoRsFromBinaryFile(corsFile);
 
@@ -88,7 +86,7 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    // Pack into Mesh
+    // Pack Mesh
     Mesh mesh;
     mesh.positions = meshData.vertices;
     mesh.normals = meshData.normals;
@@ -123,14 +121,16 @@ int main(int argc, char** argv) {
         }
     }
 
+    mesh.flattenVertices();
+
     // Renderer
     Window  window(800, 600, "CoR Skinning");
     Camera  camera;
     Shader  shader;
     AnimController animController;
 
-    // diffuse map
-    std::string texPath = projDir + R"(\input\ISO200_0003_Model_11_u1_v1_diffuse.png)";
+    // Diffuse map
+    std::string texPath = projDir + R"(\input\ISO200_0003_Rigged.fbm\ISO200_0003_Model_11_u1_v1_diffuse.jpg)";
 
     Render renderer(window, camera, shader, mesh, loader, animController, texPath);
     if (!renderer.InitializeRender()) {

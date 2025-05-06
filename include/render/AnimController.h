@@ -7,14 +7,12 @@
 #include <fbxsdk.h>
 #include "FBXLoader.h"  // for fbxToGlm
 
-/// Manages playback and evaluation of an FBX skeletal animation.
 class AnimController {
 public:
     AnimController();
     ~AnimController() = default;
 
     // Initialize from the FBX scene and its root node.
-    // Must be called after FBXLoader loads the scene.
     void Initialize(const FBXLoader& loader);
 
     // Play/Pause

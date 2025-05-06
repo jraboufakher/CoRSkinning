@@ -24,6 +24,22 @@ struct SkeletonBone {
     DualQuaternion dqTransform;
 };
 
+struct VertexKey {
+    int posIdx, normIdx, uvIdx;
+    bool operator==(VertexKey const& o) const {
+        return posIdx == o.posIdx && normIdx == o.normIdx && uvIdx == o.uvIdx;
+    }
+};
+
+struct VertexKeyHash {
+    size_t operator()(VertexKey const& k) const noexcept {
+        // a small prime-based hash
+        return ((std::hash<int>()(k.posIdx) * 31u
+            + std::hash<int>()(k.normIdx)) * 31u
+            + std::hash<int>()(k.uvIdx));
+    }
+};
+
 class Mesh {
 public:
     // CPU data
@@ -42,4 +58,6 @@ public:
     void draw() const;
 
     void uploadSkeletonUniforms(GLuint skinProg, const std::vector<glm::mat4>& boneMatrices, const std::vector<DualQuaternion>& boneDualQuats);
+
+    void flattenVertices();
 };

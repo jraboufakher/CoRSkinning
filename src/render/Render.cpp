@@ -33,9 +33,6 @@ bool Render::InitializeRender() {
     cv::Mat rgba;
     cv::cvtColor(bgr, rgba, cv::COLOR_BGR2RGBA);
 
-    /*cv::Mat rotated;
-    cv::rotate(rgba, rotated, cv::ROTATE_180);*/
-
     glGenTextures(1, &diffuseTex_);
     glBindTexture(GL_TEXTURE_2D, diffuseTex_);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
@@ -54,6 +51,7 @@ bool Render::InitializeRender() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     // Initialize mesh buffers (VBO/VAO/EBO)
+    //mesh_.flattenVertices();
     mesh_.initBuffers();
 
     // Compile/link shader
@@ -99,18 +97,6 @@ void Render::run() {
         // Evaluate animation at current time
         animController_.update(delta);
         const auto& boneMats = animController_.getBoneMatrices();
-
-        //FbxTime t0; t0.SetSecondDouble(0.0);
-        //// assume `meshNode_` is the same FbxNode* you passed into extractMeshData
-        //FbxAMatrix meshG = loader_.GetMeshNode()->EvaluateGlobalTransform(t0);
-        //glm::mat4   meshGlm = FBXLoader::fbxToGlm(meshG);
-        //glm::mat4   invMesh = glm::inverse(meshGlm);
-
-        //// now adjust each bone:
-        //std::vector<glm::mat4> adjusted = boneMats;
-        //for (auto& M : adjusted) {
-        //    M = invMesh * M;
-        //}
 
         // Compute bind-pose positions for each bone
         std::vector<glm::vec3> bindPositions(boneMats.size());
@@ -199,5 +185,9 @@ void Render::keyCallback(GLFWwindow* w, int key, int sc, int action, int mods) {
     if (key == GLFW_KEY_SPACE && action == GLFW_PRESS) {
         r->animController_.togglePlayback();
         std::cout << (r->animController_.isPlaying() ? "Playing\n" : "Paused\n");
+    }
+    if (key == GLFW_KEY_R && action == GLFW_PRESS && !r->animController_.isPlaying()) {
+        r->animController_.evaluateAt(0);
+        std::cout << "Set to Rest Pose" << std::endl;
     }
 }

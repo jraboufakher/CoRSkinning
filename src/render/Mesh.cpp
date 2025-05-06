@@ -3,6 +3,7 @@
 #include <cstring>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <unordered_map>
 
 void Mesh::initBuffers() {
     // Generate & bind a VAO
@@ -117,6 +118,10 @@ void Mesh::initBuffers() {
         indices.data(),
         GL_STATIC_DRAW);
 
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+        std::cerr << "GL error after buffer setup: " << err << "\n";
+
     // Unbind VAO
     glBindVertexArray(0);
 }
@@ -126,6 +131,11 @@ void Mesh::draw() const {
     glDrawElements(GL_TRIANGLES,
         GLsizei(indices.size()),
         GL_UNSIGNED_INT, 0);
+
+    GLenum err = glGetError();
+    if (err != GL_NO_ERROR)
+        std::cerr << "GL error after draw: " << err << "\n";
+    
     glBindVertexArray(0);
 }
 
@@ -143,7 +153,7 @@ void Mesh::uploadSkeletonUniforms(GLuint skinProg, const std::vector<glm::mat4>&
 
     // for each bone, upload .transform, .dqTransform.real, .dqTransform.dual
     for (GLsizei i = 0; i < numBones; ++i) {
-        // a) classic 4x4 matrix
+        // a) 4x4 matrix
         {
             std::string name = "skeleton.bone[" + std::to_string(i) + "].transform";
             GLint loc = glGetUniformLocation(skinProg, name.c_str());
@@ -166,6 +176,60 @@ void Mesh::uploadSkeletonUniforms(GLuint skinProg, const std::vector<glm::mat4>&
     }
 }
 
+void Mesh::flattenVertices()
+{
+    std::vector<glm::vec3> newPos;
+    std::vector<glm::vec3> newNorm;
+    std::vector<glm::vec2> newUV;
+    std::vector<unsigned int> newIdx;
+    std::vector<glm::vec3> newCoR;
+    std::vector<VertexSkinData> newSkin;
+
+    newPos.reserve(indices.size());
+    newNorm.reserve(indices.size());
+    newUV.reserve(indices.size());
+    newIdx.reserve(indices.size());
+    newCoR.reserve(indices.size());
+    newSkin.reserve(indices.size());
+
+    std::unordered_map<VertexKey, unsigned int, VertexKeyHash> seen;
+    seen.reserve(indices.size());
+
+    for (size_t i = 0; i < indices.size(); ++i) {
+        VertexKey key{
+            /*posIdx*/ static_cast<int>(indices[i]),
+            /*normIdx*/ static_cast<int>(indices[i]),
+            /*uvIdx*/   static_cast<int>(i)
+        };
+
+        auto it = seen.find(key);
+        if (it == seen.end()) {
+            unsigned int newIndex = static_cast<unsigned int>(newPos.size());
+            seen[key] = newIndex;
+
+            // copy all the per‐vertex data from the old arrays
+            newPos.push_back(positions[key.posIdx]);
+            newNorm.push_back(normals[key.normIdx]);
+            newUV.push_back(uvs[key.uvIdx]);
+            newCoR.push_back(centersOfRotation[key.posIdx]);
+            newSkin.push_back(skinInfo[key.posIdx]);
+
+            newIdx.push_back(newIndex);
+        }
+        else {
+            newIdx.push_back(it->second);
+        }
+    }
+
+    // swap everything into place
+    positions.swap(newPos);
+    normals.swap(newNorm);
+    uvs.swap(newUV);
+    indices.swap(newIdx);
+    centersOfRotation.swap(newCoR);
+    skinInfo.swap(newSkin);
+}
+
 DualQuaternion makeDualQuat(const glm::mat4& M)
 {
     // Extract rotation quaternion from upper‐left 3×3
@@ -177,7 +241,7 @@ DualQuaternion makeDualQuat(const glm::mat4& M)
     // Build "translation quaternion" qt = (0,  t)
     glm::quat qt(0, t.x, t.y, t.z);
 
-    // Dual part = 0.5 * (qt * q)
+    // Dual part
     glm::quat dq = 0.5f * (qt * q);
 
     DualQuaternion out;

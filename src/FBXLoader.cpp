@@ -2,6 +2,7 @@
 #include <iostream>
 #include <map>
 #include <algorithm>
+#include <iomanip>
 
 FBXLoader::FBXLoader() {
     InitializeSdkObjects(pManager, pScene);
@@ -171,6 +172,7 @@ bool FBXLoader::LoadScene(const char* pFilename)
         if (rootNode) {
             extractSkeletonData(rootNode);
             extractMeshData(rootNode);
+            getBindPose();
         }
 
     }
@@ -185,6 +187,51 @@ void FBXLoader::triangulateScene()
     FbxGeometryConverter converter(pManager);
     converter.Triangulate(pScene, true);
 }
+
+void FBXLoader::getBindPose() {
+    // Find the bind pose
+    for (int i = 0; i < pScene->GetPoseCount(); ++i) {
+        std::cout << "[extractSkeletonData] Find Bind Pose -> Number of Poses: " << pScene->GetPoseCount() << std::endl;
+        FbxPose* p = pScene->GetPose(i);
+        FbxString lName = p->GetName();
+        std::cout << "Pose Name: " << lName.Buffer() << std::endl;
+        std::cout << "number of items in the pose: " << p->GetCount() << std::endl;
+
+        for (int j = 0; j < p->GetCount(); j++)
+        {
+            lName = p->GetNodeName(j).GetCurrentName();
+            std::cout << "Item Name: " << lName.Buffer() << std::endl;
+
+            if (!p->IsBindPose())
+            {
+                // Rest pose can have local matrix
+                std::cout<< "    Is local space matrix: " << p->IsLocalMatrix(j) << "\n";
+            }
+
+            std::cout << "    Matrix value: ", "";
+
+            FbxString lMatrixValue;
+
+            for (int k = 0; k < 4; k++)
+            {
+                FbxMatrix  lMatrix = p->GetMatrix(j);
+                FbxVector4 lRow = lMatrix.GetRow(k);
+                char        lRowValue[1024];
+
+                FBXSDK_sprintf(lRowValue, 1024, "%9.4f %9.4f %9.4f %9.4f\n", lRow[0], lRow[1], lRow[2], lRow[3]);
+                lMatrixValue += FbxString("        ") + FbxString(lRowValue);
+            }
+
+            std::cout << lMatrixValue.Buffer() << std::endl;
+        }
+
+        if (p->IsBindPose()) {
+            bindPose = p;
+            break;
+        }
+    }
+}
+
 
 void FBXLoader::extractMeshData(FbxNode* node)
 {
@@ -265,15 +312,38 @@ void FBXLoader::extractSkeletonData(FbxNode* node)
         skeleton_.numberOfBones++;
         skeleton_.boneNodes.push_back(node);
     }
-    for (int i = 0; i < node->GetChildCount(); ++i)
+    for (int i = 0; i < node->GetChildCount(); ++i) {
         extractSkeletonData(node->GetChild(i));
-    // after gathering nodes, compute bind-pose inverses
+    }
+
+    // allocate your inverse-bind array
+    skeleton_.bindPoseInverse.resize(skeleton_.numberOfBones);
+
+    // compute bind-pose inverses (per-bone offset)
     if (node == pScene->GetRootNode()) {
         skeleton_.bindPoseInverse.resize(skeleton_.numberOfBones);
         for (unsigned int i = 0; i < skeleton_.numberOfBones; ++i) {
+            FbxNode* boneNode = skeleton_.boneNodes[i];
+
+            FbxString boneName = boneNode->GetName();
+
+            //std::cout << "Item Name: " << boneName.Buffer() << std::endl;
+
             FbxTime t0; t0.SetSecondDouble(0);
-            auto mat = skeleton_.boneNodes[i]->EvaluateGlobalTransform(t0);
+            FbxAMatrix mat = skeleton_.boneNodes[i]->EvaluateGlobalTransform(t0);
             skeleton_.bindPoseInverse[i] = glm::inverse(fbxToGlm(mat));
+
+            //std::cout << " Bind-Pose Inverse Matrix value: ", "";
+            /*FbxString lMatrixValue;
+            for (int k = 0; k < 4; k++)
+            {
+                FbxVector4 lRow = mat.GetRow(k);
+                char        lRowValue[1024];
+
+                FBXSDK_sprintf(lRowValue, 1024, "%9.4f %9.4f %9.4f %9.4f\n", lRow[0], lRow[1], lRow[2], lRow[3]);
+                lMatrixValue += FbxString("        ") + FbxString(lRowValue);
+            }*/
+            //std::cout << lMatrixValue.Buffer() << std::endl;
         }
     }
 }

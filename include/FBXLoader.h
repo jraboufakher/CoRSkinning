@@ -45,6 +45,7 @@ public:
     const std::vector<glm::mat4>& GetBindPoseInverse()   const { return skeleton_.bindPoseInverse; }
     FbxScene* GetScene() const { return pScene; }
     FbxNode* GetMeshNode() const { return meshNode_; }
+    FbxPose* GetBindPose() const { return bindPose; }
 
     const std::vector<glm::mat4>& getBoneGlobalTransforms() const { return boneGlobals_; }
     FbxNode* getSkeletonNode(int i) { return skeleton_.boneNodes[i]; }
@@ -60,6 +61,7 @@ private:
     void getBoneData(FbxMesh* mesh);
     void computeNormals(FbxMesh* mesh);
     void computeUVs(FbxMesh* mesh);
+    void getBindPose();
 
     // FBX SDK objects
     class FbxManager* pManager = nullptr;
@@ -69,5 +71,6 @@ private:
     FBXMeshData  mesh_;
     FbxNode* meshNode_ = nullptr;
     FBXSkeleton  skeleton_;
+    FbxPose* bindPose = nullptr;
     std::vector<glm::mat4> boneGlobals_;
 };
