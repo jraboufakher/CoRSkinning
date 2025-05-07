@@ -98,14 +98,14 @@ void Render::run() {
         animController_.update(delta);
         const auto& boneMats = animController_.getBoneMatrices();
 
-        // Compute bind-pose positions for each bone
+        // Get bind-pose positions from FBXLoader for each bone
+        const auto& bones = loader_.GetBones();
         std::vector<glm::vec3> bindPositions(boneMats.size());
+
         for (size_t i = 0; i < boneMats.size(); ++i) {
-            // get the bind global at t=0
-            FbxTime t0; t0.SetSecondDouble(0.0);
-            FbxAMatrix bindFbx = loader_.getSkeletonNode(i)->EvaluateGlobalTransform(t0);
-            glm::mat4 glmBind = FBXLoader::fbxToGlm(bindFbx);
-            bindPositions[i] = glm::vec3(glmBind * glm::vec4(0, 0, 0, 1));
+            // Compute inverse of bindPoseInverse to retrieve original bind-pose transform
+            glm::mat4 bindGlobal = glm::inverse(bones[i].bindPoseInverse);
+            bindPositions[i] = glm::vec3(bindGlobal[3]); // translation from bind-pose matrix
         }
 
         // Build dual-quaternions for skinning
@@ -187,7 +187,8 @@ void Render::keyCallback(GLFWwindow* w, int key, int sc, int action, int mods) {
         std::cout << (r->animController_.isPlaying() ? "Playing\n" : "Paused\n");
     }
     if (key == GLFW_KEY_R && action == GLFW_PRESS && !r->animController_.isPlaying()) {
-        r->animController_.evaluateAt(0);
+        r->animController_.evaluateAt(0.0);
+        r->animController_.update(0.0);
         std::cout << "Set to Rest Pose" << std::endl;
     }
 }

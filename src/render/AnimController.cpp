@@ -5,16 +5,12 @@
 AnimController::AnimController() {}
 
 void AnimController::Initialize(const FBXLoader& loader) {
-    // Collect skeleton bones
-    boneNodes_ = loader.GetSkeletonNodes();
-    bindPoseInverse_ = loader.GetBindPoseInverse();
-    int numBones = static_cast<int>(boneNodes_.size());
+    bones_ = loader.GetBones();
 
-    // Allocate pose arrays
-    boneMatrices_.assign(numBones, glm::mat4(1.0f));
-    boneQuaternions_.assign(numBones, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    size_t numBones = bones_.size();
+    boneMatrices_.resize(numBones, glm::mat4(1.0f));
+    boneQuaternions_.resize(numBones, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
 
-    // Set up animation evaluator and time range
     FbxScene* scene = loader.GetScene();
     if (scene->GetSrcObjectCount<FbxAnimStack>() > 0) {
         FbxAnimStack* stack = scene->GetSrcObject<FbxAnimStack>(0);
@@ -22,8 +18,15 @@ void AnimController::Initialize(const FBXLoader& loader) {
         FbxTakeInfo* takeInfo = scene->GetTakeInfo(stack->GetName());
         animStartSec_ = takeInfo->mLocalTimeSpan.GetStart().GetSecondDouble();
         animEndSec_ = takeInfo->mLocalTimeSpan.GetStop().GetSecondDouble();
+        evaluator_ = scene->GetAnimationEvaluator();
     }
-    evaluator_ = scene->GetAnimationEvaluator();
+    else {
+        evaluator_ = nullptr;
+        std::cerr << "No animation stacks found in FBX scene.\n";
+    }
+
+    animPlaying_ = false;
+    animTimeAcc_ = 0.0;
 }
 
 void AnimController::togglePlayback() {
@@ -41,20 +44,37 @@ void AnimController::update(double deltaSec) {
 }
 
 void AnimController::evaluateAt(double timeSec) {
+    animTimeAcc_ = timeSec;
+    evaluateHierarchy(timeSec);
+}
+
+void AnimController::evaluateHierarchy(double timeSec)
+{
     if (!evaluator_) return;
+
     FbxTime fbxTime;
     fbxTime.SetSecondDouble(timeSec);
 
-    int numBones = static_cast<int>(boneNodes_.size());
-    for (int i = 0; i < numBones; ++i) {
-        // evaluate global transform at time
-        FbxAMatrix gxf = evaluator_->GetNodeGlobalTransform(boneNodes_[i], fbxTime);
-        glm::mat4 globalMat = FBXLoader::fbxToGlm(gxf);
+    // Temporary storage for local transforms
+    std::vector<glm::mat4> localTransforms(bones_.size());
 
-        // compute skinning matrix = global * inverse_bind
-        boneMatrices_[i] = globalMat * bindPoseInverse_[i];
+    for (size_t i = 0; i < bones_.size(); ++i) {
+        FbxAMatrix fbxLocal = evaluator_->GetNodeLocalTransform(bones_[i].node, fbxTime);
+        localTransforms[i] = FBXLoader::fbxToGlm(fbxLocal);
+    }
 
-        // extract rotation quaternion
+    // Explicitly calculate global transforms using parent-child hierarchy
+    for (size_t i = 0; i < bones_.size(); ++i) {
+        int parentIdx = bones_[i].parentIndex;
+        glm::mat4 parentGlobal = (parentIdx == -1) ? glm::mat4(1.0f) : boneMatrices_[parentIdx];
+
+        // global = parentGlobal * local
+        boneMatrices_[i] = parentGlobal * localTransforms[i];
+
+        // Compute final skinning transform by applying inverse bind-pose
+        boneMatrices_[i] = boneMatrices_[i] * bones_[i].bindPoseInverse;
+
+        // Extract quaternion for use elsewhere
         boneQuaternions_[i] = glm::quat_cast(glm::mat3(boneMatrices_[i]));
     }
 }

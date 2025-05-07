@@ -59,32 +59,29 @@ int main(int argc, char** argv) {
         << " (" << skelData.startTime << "–" << skelData.endTime << "s)\n";
 #endif
 
+    // Compute Centers of Rotation
     CoRProcessor corProc(
         /*sigma*/0.1f,
         /*omega*/0.1f,
         /*performSubdivision*/false,
-        /*numThreads*/8
+        /*numThreads*/8,
+        /*subdivEpsilon*/0.5f,
+        /*useBFS*/true
     );
 
 #ifdef CALCULATE_COR
-    // Async compute and write out
-    corProc.computeCoRsAsync(
-        meshData,
-        skelData.numberOfBones,
-        nullptr  // no further callback
-    );
+    // compute and write out
+    corProc.ComputeCoRsAsync( meshData, skelData.numberOfBones, nullptr );
 #endif
 
     // Load the precomputed cors
     std::string corsFile = projDir + R"(\cor_output\output_file.cors)";
     auto cors = corProc.LoadCoRsFromBinaryFile(corsFile);
 
-#ifdef DEBUG
     if (cors.size() != meshData.vertices.size()) {
         std::cerr << "ERROR: mismatched CoR count\n";
         return -1;
     }
-#endif
 
     // Pack Mesh
     Mesh mesh;
@@ -123,7 +120,7 @@ int main(int argc, char** argv) {
 
     mesh.flattenVertices();
 
-    // Renderer
+    // Render
     Window  window(800, 600, "CoR Skinning");
     Camera  camera;
     Shader  shader;

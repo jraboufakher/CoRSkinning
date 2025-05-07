@@ -170,11 +170,9 @@ bool FBXLoader::LoadScene(const char* pFilename)
         // Extract Data
         FbxNode* rootNode = pScene->GetRootNode();
         if (rootNode) {
-            extractSkeletonData(rootNode);
+            extractSkeletonData();
             extractMeshData(rootNode);
-            getBindPose();
         }
-
     }
     // Destroy the importer.
     lImporter->Destroy();
@@ -187,51 +185,6 @@ void FBXLoader::triangulateScene()
     FbxGeometryConverter converter(pManager);
     converter.Triangulate(pScene, true);
 }
-
-void FBXLoader::getBindPose() {
-    // Find the bind pose
-    for (int i = 0; i < pScene->GetPoseCount(); ++i) {
-        std::cout << "[extractSkeletonData] Find Bind Pose -> Number of Poses: " << pScene->GetPoseCount() << std::endl;
-        FbxPose* p = pScene->GetPose(i);
-        FbxString lName = p->GetName();
-        std::cout << "Pose Name: " << lName.Buffer() << std::endl;
-        std::cout << "number of items in the pose: " << p->GetCount() << std::endl;
-
-        for (int j = 0; j < p->GetCount(); j++)
-        {
-            lName = p->GetNodeName(j).GetCurrentName();
-            std::cout << "Item Name: " << lName.Buffer() << std::endl;
-
-            if (!p->IsBindPose())
-            {
-                // Rest pose can have local matrix
-                std::cout<< "    Is local space matrix: " << p->IsLocalMatrix(j) << "\n";
-            }
-
-            std::cout << "    Matrix value: ", "";
-
-            FbxString lMatrixValue;
-
-            for (int k = 0; k < 4; k++)
-            {
-                FbxMatrix  lMatrix = p->GetMatrix(j);
-                FbxVector4 lRow = lMatrix.GetRow(k);
-                char        lRowValue[1024];
-
-                FBXSDK_sprintf(lRowValue, 1024, "%9.4f %9.4f %9.4f %9.4f\n", lRow[0], lRow[1], lRow[2], lRow[3]);
-                lMatrixValue += FbxString("        ") + FbxString(lRowValue);
-            }
-
-            std::cout << lMatrixValue.Buffer() << std::endl;
-        }
-
-        if (p->IsBindPose()) {
-            bindPose = p;
-            break;
-        }
-    }
-}
-
 
 void FBXLoader::extractMeshData(FbxNode* node)
 {
@@ -303,48 +256,41 @@ void FBXLoader::extractMeshData(FbxNode* node)
     }
 }
 
-void FBXLoader::extractSkeletonData(FbxNode* node)
+void FBXLoader::extractSkeletonData()
+{
+    skeleton_.bones.clear();
+    skeleton_.numberOfBones = 0;
+    extractSkeletonRecursive(pScene->GetRootNode(), -1);    // the root bone will have an index of -1
+}
+
+void FBXLoader::extractSkeletonRecursive(FbxNode* node, int parentIndex)
 {
     if (!node) return;
+
+    int currentIndex = parentIndex;
+
     FbxNodeAttribute* attr = node->GetNodeAttribute();
     if (attr && attr->GetAttributeType() == FbxNodeAttribute::eSkeleton)
     {
+        Bone bone;
+        bone.node = node;
+        bone.parentIndex = parentIndex;
+
+        // Compute bind pose inverse at time t0
+        FbxTime t0;
+        t0.SetSecondDouble(0.0);
+        FbxAMatrix mat = node->EvaluateGlobalTransform(t0);
+        bone.bindPoseInverse = glm::inverse(fbxToGlm(mat));
+
+        // Add the bone to the skeleton
+        currentIndex = static_cast<int>(skeleton_.bones.size());
+        skeleton_.bones.push_back(bone);
         skeleton_.numberOfBones++;
-        skeleton_.boneNodes.push_back(node);
     }
+
+    // Recursively go through all the bones.
     for (int i = 0; i < node->GetChildCount(); ++i) {
-        extractSkeletonData(node->GetChild(i));
-    }
-
-    // allocate your inverse-bind array
-    skeleton_.bindPoseInverse.resize(skeleton_.numberOfBones);
-
-    // compute bind-pose inverses (per-bone offset)
-    if (node == pScene->GetRootNode()) {
-        skeleton_.bindPoseInverse.resize(skeleton_.numberOfBones);
-        for (unsigned int i = 0; i < skeleton_.numberOfBones; ++i) {
-            FbxNode* boneNode = skeleton_.boneNodes[i];
-
-            FbxString boneName = boneNode->GetName();
-
-            //std::cout << "Item Name: " << boneName.Buffer() << std::endl;
-
-            FbxTime t0; t0.SetSecondDouble(0);
-            FbxAMatrix mat = skeleton_.boneNodes[i]->EvaluateGlobalTransform(t0);
-            skeleton_.bindPoseInverse[i] = glm::inverse(fbxToGlm(mat));
-
-            //std::cout << " Bind-Pose Inverse Matrix value: ", "";
-            /*FbxString lMatrixValue;
-            for (int k = 0; k < 4; k++)
-            {
-                FbxVector4 lRow = mat.GetRow(k);
-                char        lRowValue[1024];
-
-                FBXSDK_sprintf(lRowValue, 1024, "%9.4f %9.4f %9.4f %9.4f\n", lRow[0], lRow[1], lRow[2], lRow[3]);
-                lMatrixValue += FbxString("        ") + FbxString(lRowValue);
-            }*/
-            //std::cout << lMatrixValue.Buffer() << std::endl;
-        }
+        extractSkeletonRecursive(node->GetChild(i), currentIndex);
     }
 }
 
@@ -369,8 +315,8 @@ void FBXLoader::getBoneData(FbxMesh* mesh)
             FbxNode* linkNode = cluster->GetLink();
             // find that linkNode in skeleton_.boneNodes
             int boneIndex = -1;
-            for (int b = 0; b < (int)skeleton_.boneNodes.size(); ++b) {
-                if (skeleton_.boneNodes[b] == linkNode) {
+            for (int b = 0; b < (int)skeleton_.bones.size(); ++b) {
+                if (skeleton_.bones[b].node == linkNode) {
                     boneIndex = b;
                     break;
                 }
